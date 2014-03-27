@@ -187,6 +187,21 @@ class Predictor:
         rankings.sort()
         rankings.reverse()
         return rankings[0:n]
+        
+    def get_recommendations_list(self,n = 3,similarity = ""):
+        self.recommend_list = [(i,self.get_recommendations(i,n,similarity)) for i in self.data.userid]
+        
+    def print_result(self):
+        f = open(r"result",'w')
+        for entry in self.recommend_list:
+            s = str(entry[0]) + "\t"
+            for bid in entry[1]:
+                s += str(bid[1])
+                s += ","
+            s = s[0:-1] + "\n"
+            f.write(s)
+        f.flush()
+        f.close()
     
     def _test(self):
         self.data._test()
