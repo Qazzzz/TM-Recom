@@ -5,6 +5,7 @@ __author__ = 'Qazzzz'
 from sqlite3 import dbapi2 as sqlite
 import csv
 import re
+import math
 
 Filename = 't_alibaba_data.csv'
 
@@ -13,8 +14,12 @@ month_to_day = {1: 0, 2: 31, 3: 59, 4: 90, 5: 120, 6: 151, 7: 181, 8: 212, 9: 24
 
 
 class DatabaseOpt:
-    def __init__(self, dbname):
+    def __init__(self, dbname = "tianmao"):
         self.con = sqlite.connect(dbname, timeout=20)
+        self.userinfo = []
+        self.userid = []
+        self.brandid = []
+        
 
     def __del__(self):
         self.con.close()
@@ -35,7 +40,7 @@ class DatabaseOpt:
         print('db created and csv is imported')
         self.db_commit()
 
-    def _read_csv(self):
+    def _read_csv(self,filename = r't_alibaba_data.csv'):
         csv_file = file(Filename, 'rb')
         reader = csv.reader(csv_file)
         chinese_filter = re.compile('\d+')
@@ -73,3 +78,116 @@ class DatabaseOpt:
 
     def brand_num(self):
         return self.con.execute("SELECT count(1) from brandid").fetchone()[0]
+    
+    def get_userinfo_table(self):
+        if len(self.userinfo) == 0:
+            self.userinfo = self.con.execute("SELECT * FROM userinfo").fetchall()
+        return self.userinfo
+        
+    def get_userid_table(self):
+        if len(self.userid) == 0:
+            self.userid = [i for (i,) in self.con.execute("SELECT * FROM userid").fetchall()]
+        return self.userid
+        
+    def get_brandid_table(self):
+        if len(self.brandid) == 0:
+            self.brandid = [i for (i,) in self.con.execute("SELECT * FROM brandid").fetchall()]
+        return self.brandid
+        
+    def memory_tables_init(self):
+        self.get_userinfo_table()
+        self.get_userid_table()
+        self.get_brandid_table()
+        
+    
+        
+    def _test(self):
+        self.memory_tables_init()
+        
+
+class Predictor:
+    def __init__(self,data = ""):
+        if data == "":
+            self.data = DatabaseOpt()
+        else:
+            self.data = data
+            
+    def make_prefs(self):
+        self.prefs = dict()
+        for entry in self.data.userinfo:
+            if entry[0] in self.prefs:
+                self.prefs[entry[0]].update({entry[3]:self.get_score(entry[2])})
+            else:
+                self.prefs[entry[0]] = {entry[3]:self.get_score(entry[2])}
+      
+    def sim_pearson(self,p1,p2):
+        si = {}
+        for item in self.prefs[p1]:
+            if item in self.prefs[p2]:
+                si[item] = 1
+        n = len(si)
+        if n == 0:
+            return 1
+        sum1 = sum([self.prefs[p1][it] for it in si])
+        sum2 = sum([self.prefs[p2][it] for it in si])
+        
+        sum1Sq = sum([pow(self.prefs[p1][it],2) for it in si])
+        sum2Sq = sum([pow(self.prefs[p2][it],2) for it in si])
+        
+        pSum = sum([self.prefs[p1][it]*self.prefs[p2][it] for it in si])
+        
+        num = pSum - (sum1*sum2/n)
+        den = math.sqrt((sum1Sq - pow(sum1,2)/n) * (sum2Sq - pow(sum2,2)/n))
+        if den == 0: 
+            return 0
+        
+        r = num/den
+        return r
+        
+    def get_score(self,x):
+        if x == 0:
+            return 1
+        elif x == 2:
+            return 3
+        elif x == 3:
+            return 4
+        elif x == 1:
+            return 6
+            
+    def top_matches(self,person,n = 5,similarity = ""):
+        if similarity == "":
+            similarity = self.sim_pearson
+        self.scores = [(similarity(person,other),other) 
+                        for other in self.prefs if other != person]
+                            
+        self.scores.sort()
+        self.scores.reverse()
+        return self.scores[0:n]
+        
+    def get_recommendations(self,person,n = 3,similarity = ""):
+        if similarity == "":
+            similarity = self.sim_pearson
+        totals = {}
+        simSums = {}
+        for other in self.prefs:
+            if other == person:
+                continue
+            sim = similarity(person,other)
+            if sim <= 0:
+                continue
+            for item in self.prefs[other]:
+                if item not in self.prefs[person]:
+                    totals.setdefault(item,0)
+                    totals[item] += self.prefs[other][item] * sim
+                    simSums.setdefault(item,0)
+                    simSums[item] += sim
+        
+        rankings = [(total/simSums[item],item) for item,total in totals.items()]
+        
+        rankings.sort()
+        rankings.reverse()
+        return rankings[0:n]
+    
+    def _test(self):
+        self.data._test()
+        self.make_prefs()
