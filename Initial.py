@@ -105,6 +105,7 @@ class DatabaseOpt:
             self.sample_collection.setdefault(userid, [])
             self.test_collection.setdefault(userid, [])
             userinfo_one = self.con.execute("SELECT * FROM userinfo WHERE user_id=%d" % userid).fetchall()
+            userinfo_one.sort(key=lambda l: (l[3]))
             self.sample_collection[userid] = userinfo_one[0:int(len(userinfo_one)*rate)]
             self.test_collection[userid] = userinfo_one[int(len(userinfo_one)*rate):]
 
