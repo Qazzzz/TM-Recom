@@ -164,7 +164,7 @@ class Predictor:
         self.scores.reverse()
         return self.scores[0:n]
         
-    def get_recommendations(self,person,n = 3,similarity = ""):
+    def get_recommendations(self,person,n = 6,similarity = ""):
         if similarity == "":
             similarity = self.sim_pearson
         totals = {}
@@ -176,11 +176,11 @@ class Predictor:
             if sim <= 0:
                 continue
             for item in self.prefs[other]:
-                if item not in self.prefs[person]:
-                    totals.setdefault(item,0)
-                    totals[item] += self.prefs[other][item] * sim
-                    simSums.setdefault(item,0)
-                    simSums[item] += sim
+                #if item not in self.prefs[person]:
+                totals.setdefault(item,0)
+                totals[item] += self.prefs[other][item] * sim
+                simSums.setdefault(item,0)
+                simSums[item] += sim
         
         rankings = [(total/simSums[item],item) for item,total in totals.items()]
         
@@ -188,7 +188,7 @@ class Predictor:
         rankings.reverse()
         return rankings[0:n]
         
-    def get_recommendations_list(self,n = 3,similarity = ""):
+    def get_recommendations_list(self,n = 6,similarity = ""):
         self.recommend_list = [(i,self.get_recommendations(i,n,similarity)) for i in self.data.userid]
         
     def print_result(self):
@@ -202,6 +202,8 @@ class Predictor:
             f.write(s)
         f.flush()
         f.close()
+        
+    
     
     def _test(self):
         self.data._test()
