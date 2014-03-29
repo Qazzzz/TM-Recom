@@ -1,4 +1,3 @@
-__author__ = 'Qazzzz'
 # -*- coding: utf-8 -*-
 # -*- working on PY2 -*-
 
@@ -7,19 +6,21 @@ import csv
 import re
 import math
 
-Filename = 't_alibaba_data.csv'
+# CSV filename
+Filename = r't_alibaba_data.csv'
 
 # Cumulative days
 month_to_day = {1: 0, 2: 31, 3: 59, 4: 90, 5: 120, 6: 151, 7: 181, 8: 212, 9: 243, 10: 273, 11: 304, 12: 334}
 
 
 class DatabaseOpt:
-    def __init__(self, dbname = "tianmao"):
+    def __init__(self, dbname="tianmao"):
         self.con = sqlite.connect(dbname, timeout=20)
         self.userinfo = []
         self.userid = []
         self.brandid = []
-        
+        self.sample_collection = {}
+        self.test_collection = {}
 
     def __del__(self):
         self.con.close()
@@ -40,8 +41,8 @@ class DatabaseOpt:
         print('db created and csv is imported')
         self.db_commit()
 
-    def _read_csv(self,filename = r't_alibaba_data.csv'):
-        csv_file = file(Filename, 'rb')
+    def _read_csv(self, filename=Filename):
+        csv_file = file(filename, 'rb')
         reader = csv.reader(csv_file)
         chinese_filter = re.compile('\d+')
         for line in reader:
@@ -78,7 +79,7 @@ class DatabaseOpt:
 
     def brand_num(self):
         return self.con.execute("SELECT count(1) from brandid").fetchone()[0]
-    
+
     def get_userinfo_table(self):
         if len(self.userinfo) == 0:
             self.userinfo = self.con.execute("SELECT * FROM userinfo").fetchall()
@@ -93,20 +94,32 @@ class DatabaseOpt:
         if len(self.brandid) == 0:
             self.brandid = [i for (i,) in self.con.execute("SELECT * FROM brandid").fetchall()]
         return self.brandid
-        
+
+    # rate = number of sample / total number
+    # for self.sample_collection & self.test_collection:
+    #     key = user_id,  value = [(XXX, XXX, XXX, XXX), (XXX, XXX, XXX, XXX), .......]
+    def create_sample_test_collection(self, rate=0.8):
+        user_num = self.user_num()
+        for i in range(user_num):
+            userid = self.con.execute("SELECT * FROM userid").fetchall()[i][0]
+            self.sample_collection.setdefault(userid, [])
+            self.test_collection.setdefault(userid, [])
+            userinfo_one = self.con.execute("SELECT * FROM userinfo WHERE user_id=%d" % userid).fetchall()
+            userinfo_one.sort(key=lambda l: (l[3]))
+            self.sample_collection[userid] = userinfo_one[0:int(len(userinfo_one)*rate)]
+            self.test_collection[userid] = userinfo_one[int(len(userinfo_one)*rate):]
+
     def memory_tables_init(self):
         self.get_userinfo_table()
         self.get_userid_table()
         self.get_brandid_table()
-        
-    
-        
+
     def _test(self):
         self.memory_tables_init()
         
 
 class Predictor:
-    def __init__(self,data = ""):
+    def __init__(self, data=""):
         if data == "":
             self.data = DatabaseOpt()
         else:
@@ -120,7 +133,7 @@ class Predictor:
             else:
                 self.prefs[entry[0]] = {entry[3]:self.get_score(entry[2])}
       
-    def sim_pearson(self,p1,p2):
+    def sim_pearson(self, p1, p2):
         si = {}
         for item in self.prefs[p1]:
             if item in self.prefs[p2]:
@@ -144,7 +157,7 @@ class Predictor:
         r = num/den
         return r
         
-    def get_score(self,x):
+    def get_score(self, x):
         if x == 0:
             return 1
         elif x == 2:
@@ -154,16 +167,17 @@ class Predictor:
         elif x == 1:
             return 6
             
-    def top_matches(self,person,n = 5,similarity = ""):
+    def top_matches(self, person, n=5, similarity=""):
         if similarity == "":
             similarity = self.sim_pearson
-        self.scores = [(similarity(person,other),other) 
+        self.scores = [(similarity(person, other), other)
                         for other in self.prefs if other != person]
                             
         self.scores.sort()
         self.scores.reverse()
         return self.scores[0:n]
         
+
     def get_recommendations(self,person,n = 6,similarity = ""):
         if similarity == "":
             similarity = self.sim_pearson
