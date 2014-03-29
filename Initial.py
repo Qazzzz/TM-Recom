@@ -113,25 +113,34 @@ class DatabaseOpt:
         self.get_userinfo_table()
         self.get_userid_table()
         self.get_brandid_table()
+        self.create_sample_test_collection()
 
     def _test(self):
         self.memory_tables_init()
         
+        
 
 class Predictor:
-    def __init__(self, data=""):
-        if data == "":
+    def __init__(self, data=None):
+        if data == None:
             self.data = DatabaseOpt()
         else:
             self.data = data
             
     def make_prefs(self):
         self.prefs = dict()
-        for entry in self.data.userinfo:
+        self.prefs_test = {}
+        for entry in self.data.sample_collection:
             if entry[0] in self.prefs:
                 self.prefs[entry[0]].update({entry[3]:self.get_score(entry[2])})
             else:
                 self.prefs[entry[0]] = {entry[3]:self.get_score(entry[2])}
+                
+        for entry in self.data.test_collection:
+            if entry[0] in self.prefs_test:
+                self.prefs_test[entry[0]].update({entry[3]:self.get_score(entry[2])})
+            else:
+                self.prefs_test[entry[0]] = {entry[3]:self.get_score(entry[2])}
       
     def sim_pearson(self, p1, p2):
         si = {}
@@ -167,8 +176,8 @@ class Predictor:
         elif x == 1:
             return 6
             
-    def top_matches(self, person, n=5, similarity=""):
-        if similarity == "":
+    def top_matches(self, person, n=5, similarity=None):
+        if similarity == None:
             similarity = self.sim_pearson
         self.scores = [(similarity(person, other), other)
                         for other in self.prefs if other != person]
@@ -178,8 +187,8 @@ class Predictor:
         return self.scores[0:n]
         
 
-    def get_recommendations(self,person,n = 6,similarity = ""):
-        if similarity == "":
+    def get_recommendations(self,person,n = 6,similarity = None):
+        if similarity == None:
             similarity = self.sim_pearson
         totals = {}
         simSums = {}
@@ -202,7 +211,7 @@ class Predictor:
         rankings.reverse()
         return rankings[0:n]
         
-    def get_recommendations_list(self,n = 6,similarity = ""):
+    def get_recommendations_list(self,n = 6,similarity = None):
         self.recommend_list = [(i,self.get_recommendations(i,n,similarity)) for i in self.data.userid]
         
     def print_result(self):
@@ -217,7 +226,32 @@ class Predictor:
         f.flush()
         f.close()
         
-    
+    def test_result(self):
+        assert(self.recommend_list != None)
+        true_pos = 0
+        false_pos = 0
+        false_neg = 0
+        self.get_test_list()
+        for rec_usr in self.recommend_list:
+            count = 0
+            for rec_item in self.recommend_list[rec_usr]:
+                if rec_item[1] in self.test_list[rec_usr]:
+                    true_pos += 1
+                    count += 1
+                else:
+                    false_pos += 1
+            false_neg += len(self.test_list[rec_usr]) - count
+        precise = true_pos / (true_pos + false_pos)
+        recall = true_pos / (true_pos + false_neg)
+        f1 = 2 * precise * recall / (precise + recall)
+        return precise,recall,f1
+                
+        
+    def get_test_list(self):
+        self.test_list = {}
+        for usr in self.prefs_test:
+            buy = [item for item in self.prefs_test[usr].keys() if self.prefs_test[usr][item] == 6]
+            self.test_list[usr] = buy
     
     def _test(self):
         self.data._test()
