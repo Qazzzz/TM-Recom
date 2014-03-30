@@ -14,7 +14,7 @@ month_to_day = {1: 0, 2: 31, 3: 59, 4: 90, 5: 120, 6: 151, 7: 181, 8: 212, 9: 24
 
 
 class DatabaseOpt:
-    def __init__(self, dbname="tianmao", use_memory_table=1):
+    def __init__(self, dbname="tianmao", use_memory_table=1, rate=0.8):
         self.con = sqlite.connect(dbname, timeout=20)
         self.userinfo = []
         self.userid = []
@@ -28,7 +28,7 @@ class DatabaseOpt:
             print("Database %s exist" % dbname)
         if use_memory_table:
             self.memory_tables_init()
-            self.create_sample_test_collection()
+            self.create_sample_test_collection(rate)
             print("Memory tables and sample/test set initialed")
 
     def __del__(self):
@@ -141,53 +141,79 @@ class DatabaseOpt:
         
 
 class Predictor:
-    def __init__(self, data=""):
-        if data == "":
+    def __init__(self, data=None):
+        if data == None:
             self.data = DatabaseOpt()
         else:
             self.data = DatabaseOpt(dbname=data)
             
     def make_prefs(self):
         self.prefs = dict()
-        for entry in self.data.userinfo:
-            if entry[0] in self.prefs:
-                self.prefs[entry[0]].update({entry[1]: self.get_score(entry[2])})
-            else:
-                self.prefs[entry[0]] = {entry[1]: self.get_score(entry[2])}
-      
+        self.prefs_test = {}
+                #遍历列表中的每一个人
+        for usr in self.data.sample_collection:
+            #遍历该用户的每一条商品记录，依次是用户id，日期，行动，品牌id
+            for entry in self.data.sample_collection[usr]:
+                if entry[0] in self.prefs:
+                    if entry[3] in self.prefs[entry[0]]:
+                        self.prefs[entry[0]].update({entry[3]:self.get_score(entry[2])+self.prefs[entry[0]][entry[3]]})
+                    else:
+                        self.prefs[entry[0]].update({entry[3]:self.get_score(entry[2])})
+                else:
+                    self.prefs[entry[0]] = {entry[3]:self.get_score(entry[2])}
+        """
+        for entry_long in self.data.test_collection:
+            for entry in self.data.test_collection[entry_long]:
+                if entry[0] in self.prefs_test:
+                    self.prefs_test[entry[0]].update({entry[3]:self.get_score(entry[2])})
+                else:
+                    self.prefs_test[entry[0]] = {entry[3]:self.get_score(entry[2])}
+        """
+    exception_count = 0
+
     def sim_pearson(self, p1, p2):
         si = {}
-        for item in self.prefs[p1]:
-            if item in self.prefs[p2]:
-                si[item] = 1
-        n = len(si)
-        if n == 0:
-            return 1
-        sum1 = sum([self.prefs[p1][it] for it in si])
-        sum2 = sum([self.prefs[p2][it] for it in si])
+        try:
+            for item in self.prefs[p1]:
+                if item in self.prefs[p2]:
+                    si[item] = 1
+            n = len(si)
+            if n == 0:
+                return 1
+            sum1 = sum([self.prefs[p1][it] for it in si])
+            sum2 = sum([self.prefs[p2][it] for it in si])
         
-        sum1Sq = sum([pow(self.prefs[p1][it], 2) for it in si])
-        sum2Sq = sum([pow(self.prefs[p2][it], 2) for it in si])
+            sum1Sq = sum([pow(self.prefs[p1][it], 2) for it in si])
+            sum2Sq = sum([pow(self.prefs[p2][it], 2) for it in si])
         
-        pSum = sum([self.prefs[p1][it]*self.prefs[p2][it] for it in si])
+            pSum = sum([self.prefs[p1][it]*self.prefs[p2][it] for it in si])
         
-        num = pSum - (sum1*sum2/n)
-        den = math.sqrt((sum1Sq - pow(sum1, 2)/n) * (sum2Sq - pow(sum2,2)/n))
-        if den == 0: 
+            num = pSum - (sum1*sum2/n)
+            den = math.sqrt((sum1Sq - pow(sum1, 2)/n) * (sum2Sq - pow(sum2, 2)/n))
+            if den == 0:
+                return 0
+        
+            r = num/den
+            return r
+        except Exception:
+            self.exception_count += 1
+            print "similarity = 0!"+str(p1)+"vs"+str(p2)
             return 0
-        
-        r = num/den
-        return r
+
+    SCORE_CLICK = 1
+    SCORE_SHOUCANG = 4
+    SCORE_GOUWUCHE = 8
+    SCORE_BUY = 10
         
     def get_score(self, x):
         if x == 0:
-            return 1
+            return Predictor.SCORE_CLICK
         elif x == 2:
-            return 3
+            return Predictor.SCORE_SHOUCANG
         elif x == 3:
-            return 4
+            return Predictor.SCORE_GOUWUCHE
         elif x == 1:
-            return 6
+            return Predictor.SCORE_BUY
             
     def top_matches(self, person, n=5, similarity=""):
         if similarity == "":
@@ -198,10 +224,9 @@ class Predictor:
         self.scores.sort()
         self.scores.reverse()
         return self.scores[0:n]
-        
 
-    def get_recommendations(self, person, n=6, similarity=""):
-        if similarity == "":
+    def get_recommendations(self, person, n=6, similarity=None):
+        if similarity is None:
             similarity = self.sim_pearson
         totals = {}
         simSums = {}
@@ -224,21 +249,61 @@ class Predictor:
         rankings.reverse()
         return rankings[0:n]
         
-    def get_recommendations_list(self, n=6, similarity=""):
-        self.recommend_list = [(i, self.get_recommendations(i, n, similarity)) for i in self.data.userid]
+    def get_recommendations_list(self, n=6, similarity=None):
+        self.recommend_list = {i:self.get_recommendations(i,n,similarity) for i in self.data.userid}
         
     def print_result(self):
         f = open(r"result.txt", 'w')
         for entry in self.recommend_list:
-            s = str(entry[0]) + "\t"
-            for bid in entry[1]:
+            s = str(entry) + "\t"
+            for bid in self.recommend_list[entry]:
                 s += str(bid[1])
                 s += ","
             s = s[0:-1] + "\n"
             f.write(s)
         f.flush()
         f.close()
-    
+
+    def test_result(self):
+        assert(self.recommend_list != None)
+        true_pos = 0
+        false_pos = 0
+        false_neg = 0
+        self.get_test_list()
+        for rec_usr in self.recommend_list:
+            count = 0
+            for rec_item in self.recommend_list[rec_usr]:
+                if rec_item[1] in self.test_list[rec_usr]:
+                    true_pos += 1
+                    count += 1
+                else:
+                    false_pos += 1
+            false_neg += len(self.test_list[rec_usr]) - count
+        recall = 0
+        precise = 0
+        if true_pos == 0:
+            precise = 0
+            recall = 0
+        if precise + recall == 0:
+            return 0,0,0
+        else:
+            f1 = 2 * precise * recall / (precise + recall)
+            return precise, recall, f1
+
+    """
+    def get_test_list(self):
+        self.test_list = {}
+        for usr in self.prefs_test:
+            buy = [item for item in self.prefs_test[usr].keys() if self.prefs_test[usr][item] == Predictor.SCORE_BUY]
+            self.test_list[usr] = buy
+    """
+
+    def get_test_list(self):
+        self.test_list = {}
+        for usr in self.data.test_collection:
+            buy = set([record[3] for record in self.data.test_collection[usr] if record[2] == 1])
+            self.test_list[usr] = buy
+
     def _test(self):
         self.data._test()
         self.make_prefs()
