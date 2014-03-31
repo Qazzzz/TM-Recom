@@ -155,12 +155,12 @@ class Predictor:
             #遍历该用户的每一条商品记录，依次是用户id，日期，行动，品牌id
             for entry in self.data.sample_collection[usr]:
                 if entry[0] in self.prefs:
-                    if entry[3] in self.prefs[entry[0]]:
-                        self.prefs[entry[0]].update({entry[3]:self.get_score(entry[2])+self.prefs[entry[0]][entry[3]]})
+                    if entry[1] in self.prefs[entry[0]]:
+                        self.prefs[entry[0]].update({entry[1]: self.get_score(entry[2])+self.prefs[entry[0]][entry[1]]})
                     else:
-                        self.prefs[entry[0]].update({entry[3]:self.get_score(entry[2])})
+                        self.prefs[entry[0]].update({entry[1]: self.get_score(entry[2])})
                 else:
-                    self.prefs[entry[0]] = {entry[3]:self.get_score(entry[2])}
+                    self.prefs[entry[0]] = {entry[1]: self.get_score(entry[2])}
         """
         for entry_long in self.data.test_collection:
             for entry in self.data.test_collection[entry_long]:
