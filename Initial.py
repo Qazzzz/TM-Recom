@@ -329,11 +329,13 @@ class Predictor:
                 else:
                     false_pos += 1
             false_neg += len(self.test_list[rec_usr]) - count
-        recall = 0
-        precise = 0
+        
         if true_pos == 0:
             precise = 0
             recall = 0
+        else:
+            recall = true_pos / (true_pos + false_neg)
+            precise = true_pos / (true_pos + false_pos)
         if precise + recall == 0:
             return 0,0,0
         else:
