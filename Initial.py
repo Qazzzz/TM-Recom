@@ -79,7 +79,11 @@ class DatabaseOpt:
 
     def brand_num(self):
         return self.con.execute("SELECT count(1) from brandid").fetchone()[0]
-
+    
+    """
+    取得基础信息表。如果表不存在，则创建它们。
+    usrinfo列表格式：【（用户id，日期，行为，商品id），。。。】
+    """
     def get_userinfo_table(self):
         if len(self.userinfo) == 0:
             self.userinfo = self.con.execute("SELECT * FROM userinfo").fetchall()
@@ -109,12 +113,20 @@ class DatabaseOpt:
             self.sample_collection[userid] = userinfo_one[0:int(len(userinfo_one)*rate)]
             self.test_collection[userid] = userinfo_one[int(len(userinfo_one)*rate):]
 
+    """
+    把数据表读入内存，并且划分测试集和训练集。
+    测试集与训练集格式：
+    {用户id:(用户id,日期,行为,商品id),...)}
+    """
     def memory_tables_init(self,rate = 0.8):
         self.get_userinfo_table()
         self.get_userid_table()
         self.get_brandid_table()
         self.create_sample_test_collection(rate)
 
+    """
+    初始化时常用的行动
+    """
     def _test(self):
         self.memory_tables_init()
 
@@ -124,21 +136,23 @@ class Predictor:
             self.data = DatabaseOpt()
         else:
             self.data = data
-            
+    """
+    生成偏好索引字典
+    偏好格式:
+    {用户id:{商品1id:评价得分,商品2id:评价得分,...},...}
+    """            
     def make_prefs(self):
         self.prefs = dict()
         self.prefs_test = {}
         #遍历列表中的每一个人
         for usr in self.data.sample_collection:
             #遍历该用户的每一条商品记录，依次是用户id，日期，行动，品牌id
+            self.prefs[usr] = {}
             for entry in self.data.sample_collection[usr]:
-                if entry[0] in self.prefs:
-                    if entry[3] in self.prefs[entry[0]]:
-                        self.prefs[entry[0]].update({entry[3]:self.get_score(entry[2])+self.prefs[entry[0]][entry[3]]})
-                    else:
-                        self.prefs[entry[0]].update({entry[3]:self.get_score(entry[2])})
+                if entry[3] in self.prefs[entry[0]]:
+                    self.prefs[entry[0]].update({entry[3]:self.get_score(entry[2])+self.prefs[entry[0]][entry[3]]})
                 else:
-                    self.prefs[entry[0]] = {entry[3]:self.get_score(entry[2])}
+                    self.prefs[entry[0]].update({entry[3]:self.get_score(entry[2])})
         """            
         for entry_long in self.data.test_collection:        
             for entry in self.data.test_collection[entry_long]:
@@ -148,7 +162,10 @@ class Predictor:
                     self.prefs_test[entry[0]] = {entry[3]:self.get_score(entry[2])}
         """
 
-    exception_count = 0      
+    exception_count = 0   
+    """
+    计算p1和p2的pearson距离
+    """
     def sim_pearson(self, p1, p2):
         si = {}
         try:
@@ -157,7 +174,7 @@ class Predictor:
                     si[item] = 1
             n = len(si)
             if n == 0:
-                return 1
+                return -1
             sum1 = sum([self.prefs[p1][it] for it in si])
             sum2 = sum([self.prefs[p2][it] for it in si])
             
@@ -177,12 +194,29 @@ class Predictor:
             self.exception_count += 1
             print "similarity = 0!"+str(p1)+"vs"+str(p2)
             return 0
-    
+            """
+    计算p1和p2的欧氏距离
+    """        
+    def sim_distance(self,p1,p2):
+        si = {}
+        for item in self.prefs[p1]:
+            if item in self.prefs[p2]:
+                si[item] = 1
+        if len(si) == 0:
+            return 0
+        sum_of_squares = sum([pow(self.prefs[p1][item] - self.prefs[p2][item],2)
+        for item in self.prefs[p1] if item in self.prefs[p2]])
+        return 1/(1+math.sqrt(sum_of_squares))
+    """
+    几种行为的相似性评价分数
+    """    
     SCORE_CLICK = 1
     SCORE_SHOUCANG = 4
-    SCORE_GOUWUCHE = 8
-    SCORE_BUY = 10
-    
+    SCORE_GOUWUCHE = 6
+    SCORE_BUY = 8
+    """
+    根据行为x返回其得分
+    """
     def get_score(self, x):
         if x == 0:
             return Predictor.SCORE_CLICK
@@ -192,10 +226,12 @@ class Predictor:
             return Predictor.SCORE_GOUWUCHE
         elif x == 1:
             return Predictor.SCORE_BUY
-            
+    """
+    返回与person最相似者,使用similarity指定的计算距离方法
+    """        
     def top_matches(self, person, n=5, similarity=None):
         if similarity == None:
-            similarity = self.sim_pearson
+            similarity = self.sim_distance
         self.scores = [(similarity(person, other), other)
                         for other in self.prefs if other != person]
                             
@@ -203,10 +239,12 @@ class Predictor:
         self.scores.reverse()
         return self.scores[0:n]
         
-
+    """
+    返回对person的推荐物品
+    """
     def get_recommendations(self,person,n = 6,similarity = None):
         if similarity == None:
-            similarity = self.sim_pearson
+            similarity = self.sim_distance
         totals = {}
         simSums = {}
         for other in self.prefs:
@@ -227,10 +265,15 @@ class Predictor:
         rankings.sort()
         rankings.reverse()
         return rankings[0:n]
-        
+    """
+    返回对所有人的推荐字典.格式如下:
+    {用户id:[(相似度得分,商品id),(相似度得分,商品id),...],...}
+    """    
     def get_recommendations_list(self,n = 6,similarity = None):
         self.recommend_list = {i:self.get_recommendations(i,n,similarity) for i in self.data.userid}
-        
+    """
+    打印结果
+    """
     def print_result(self):
         f = open(r"result.txt",'w')
         for entry in self.recommend_list:
@@ -242,7 +285,9 @@ class Predictor:
             f.write(s)
         f.flush()
         f.close()
-        
+    """
+    测试结果,返回召准率,召回率,F1得分
+    """    
     def test_result(self):
         assert(self.recommend_list != None)
         true_pos = 0
@@ -282,7 +327,9 @@ class Predictor:
         for usr in self.data.test_collection:
             buy = set([record[3] for record in self.data.test_collection[usr] if record[2] == 1])
             self.test_list[usr] = buy
-    
+    """
+    初始化对象时常做的动作，主要是生成数据内存表、生成偏好索引字典
+    """
     def _test(self):
         self.data._test()
         self.make_prefs()
