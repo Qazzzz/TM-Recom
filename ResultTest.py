@@ -40,7 +40,7 @@ class ResultTest:
             temp = [item for item in temp_test if item in temp_pred]
             hitBrands += len(temp)
             pBrands += len(temp_pred)
-        self.precision = hitBrands/pBrands
+        self.precision = float(hitBrands)/float(pBrands)
 
     def _calculate_recall(self):
         hitBrands = 0
@@ -53,7 +53,7 @@ class ResultTest:
             temp = [item for item in temp_test if item in temp_pred]
             hitBrands += len(temp)
             bBrands += len(temp_test)
-        self.recall = hitBrands/bBrands
+        self.recall = float(hitBrands)/float(bBrands)
 
     def calculate_f1_score(self):
         self._calculate_precision()
