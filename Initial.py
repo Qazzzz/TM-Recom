@@ -14,13 +14,22 @@ month_to_day = {1: 0, 2: 31, 3: 59, 4: 90, 5: 120, 6: 151, 7: 181, 8: 212, 9: 24
 
 
 class DatabaseOpt:
-    def __init__(self, dbname="tianmao"):
+    def __init__(self, dbname="tianmao", use_memory_table=1, rate=0.8):
         self.con = sqlite.connect(dbname, timeout=20)
         self.userinfo = []
         self.userid = []
         self.brandid = []
         self.sample_collection = {}
         self.test_collection = {}
+        if not self.con.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='userinfo'").fetchone()[0]:
+            self.create_index_tables()
+            print("Database initialed")
+        else:
+            print("Database %s exist" % dbname)
+        if use_memory_table:
+            self.memory_tables_init()
+            self.create_sample_test_collection(rate)
+            print("Memory tables and sample/test set initialed")
 
     def __del__(self):
         self.con.close()
@@ -38,7 +47,6 @@ class DatabaseOpt:
         self.con.execute("DELETE FROM brandid")
 
         self._read_csv()
-        print('db created and csv is imported')
         self.db_commit()
 
     def _read_csv(self, filename=Filename):
@@ -111,7 +119,21 @@ class DatabaseOpt:
             userinfo_one = self.con.execute("SELECT * FROM userinfo WHERE user_id=%d" % userid).fetchall()
             userinfo_one.sort(key=lambda l: (l[3]))
             self.sample_collection[userid] = userinfo_one[0:int(len(userinfo_one)*rate)]
-            self.test_collection[userid] = userinfo_one[int(len(userinfo_one)*rate):]
+            self.test_collection[userid] = [item for item in userinfo_one[int(len(userinfo_one)*rate):] if item[2] == 1]
+        self._output_test_set_file()
+
+    def _output_test_set_file(self):
+        f = open(r"test_set.txt", 'w')
+        for user_id in self.test_collection:
+            if len(self.test_collection[user_id]):
+                s = str(user_id) + "\t"
+                for item in self.test_collection[user_id]:
+                    s += str(item[1])
+                    s += ","
+                s = s[0:-1] + "\n"
+                f.write(s)
+        f.flush()
+        f.close()
 
     """
     把数据表读入内存，并且划分测试集和训练集。
@@ -122,46 +144,47 @@ class DatabaseOpt:
         self.get_userinfo_table()
         self.get_userid_table()
         self.get_brandid_table()
-        self.create_sample_test_collection(rate)
 
     """
     初始化时常用的行动
     """
     def _test(self):
         self.memory_tables_init()
+        
 
 class Predictor:
     def __init__(self, data=None):
         if data == None:
             self.data = DatabaseOpt()
         else:
-            self.data = data
+            self.data = DatabaseOpt(dataname=data)
     """
     生成偏好索引字典
     偏好格式:
     {用户id:{商品1id:评价得分,商品2id:评价得分,...},...}
     """            
+
     def make_prefs(self):
         self.prefs = dict()
         self.prefs_test = {}
-        #遍历列表中的每一个人
+                #遍历列表中的每一个人
         for usr in self.data.sample_collection:
             #遍历该用户的每一条商品记录，依次是用户id，日期，行动，品牌id
             self.prefs[usr] = {}
             for entry in self.data.sample_collection[usr]:
                 if entry[3] in self.prefs[entry[0]]:
-                    self.prefs[entry[0]].update({entry[3]:self.get_score(entry[2])+self.prefs[entry[0]][entry[3]]})
+                    self.prefs[entry[0]].update({entry[1]:self.get_score(entry[2])+self.prefs[entry[0]][entry[3]]})
                 else:
-                    self.prefs[entry[0]].update({entry[3]:self.get_score(entry[2])})
+                    self.prefs[entry[0]].update({entry[1]:self.get_score(entry[2])})
         """            
         for entry_long in self.data.test_collection:        
+
             for entry in self.data.test_collection[entry_long]:
                 if entry[0] in self.prefs_test:
                     self.prefs_test[entry[0]].update({entry[3]:self.get_score(entry[2])})
                 else:
                     self.prefs_test[entry[0]] = {entry[3]:self.get_score(entry[2])}
         """
-
     exception_count = 0   
     """
     计算p1和p2的pearson距离
@@ -177,24 +200,24 @@ class Predictor:
                 return -1
             sum1 = sum([self.prefs[p1][it] for it in si])
             sum2 = sum([self.prefs[p2][it] for it in si])
-            
-            sum1Sq = sum([pow(self.prefs[p1][it],2) for it in si])
-            sum2Sq = sum([pow(self.prefs[p2][it],2) for it in si])
-            
+        
+            sum1Sq = sum([pow(self.prefs[p1][it], 2) for it in si])
+            sum2Sq = sum([pow(self.prefs[p2][it], 2) for it in si])
+        
             pSum = sum([self.prefs[p1][it]*self.prefs[p2][it] for it in si])
-            
+        
             num = pSum - (sum1*sum2/n)
-            den = math.sqrt((sum1Sq - pow(sum1,2)/n) * (sum2Sq - pow(sum2,2)/n))
-            if den == 0: 
+            den = math.sqrt((sum1Sq - pow(sum1, 2)/n) * (sum2Sq - pow(sum2, 2)/n))
+            if den == 0:
                 return 0
-            
+        
             r = num/den
             return r
         except Exception:
             self.exception_count += 1
             print "similarity = 0!"+str(p1)+"vs"+str(p2)
             return 0
-            """
+    """
     计算p1和p2的欧氏距离
     """        
     def sim_distance(self,p1,p2):
@@ -226,6 +249,7 @@ class Predictor:
             return Predictor.SCORE_GOUWUCHE
         elif x == 1:
             return Predictor.SCORE_BUY
+
     """
     返回与person最相似者,使用similarity指定的计算距离方法
     """        
@@ -250,21 +274,22 @@ class Predictor:
         for other in self.prefs:
             if other == person:
                 continue
-            sim = similarity(person,other)
+            sim = similarity(person, other)
             if sim <= 0:
                 continue
             for item in self.prefs[other]:
                 #if item not in self.prefs[person]:
-                totals.setdefault(item,0)
+                totals.setdefault(item, 0)
                 totals[item] += self.prefs[other][item] * sim
-                simSums.setdefault(item,0)
+                simSums.setdefault(item, 0)
                 simSums[item] += sim
         
-        rankings = [(total/simSums[item],item) for item,total in totals.items()]
+        rankings = [(total/simSums[item], item) for item, total in totals.items()]
         
         rankings.sort()
         rankings.reverse()
         return rankings[0:n]
+
     """
     返回对所有人的推荐字典.格式如下:
     {用户id:[(相似度得分,商品id),(相似度得分,商品id),...],...}
@@ -275,7 +300,7 @@ class Predictor:
     打印结果
     """
     def print_result(self):
-        f = open(r"result.txt",'w')
+        f = open(r"result.txt", 'w')
         for entry in self.recommend_list:
             s = str(entry) + "\t"
             for bid in self.recommend_list[entry]:
@@ -285,6 +310,7 @@ class Predictor:
             f.write(s)
         f.flush()
         f.close()
+
     """
     测试结果,返回召准率,召回率,F1得分
     """    
@@ -312,24 +338,27 @@ class Predictor:
             return 0,0,0
         else:
             f1 = 2 * precise * recall / (precise + recall)
-            return precise,recall,f1
-                
+            return precise, recall, f1
+
     """
     def get_test_list(self):
         self.test_list = {}
         for usr in self.prefs_test:
-            buy = [item for item in self.prefs_test[usr].keys() if self.prefs_test[usr][item] == SCORE_BUY]
+            buy = [item for item in self.prefs_test[usr].keys() if self.prefs_test[usr][item] == Predictor.SCORE_BUY]
             self.test_list[usr] = buy
     """
-    
+
     def get_test_list(self):
         self.test_list = {}
         for usr in self.data.test_collection:
-            buy = set([record[3] for record in self.data.test_collection[usr] if record[2] == 1])
+            buy = set([record[1] for record in self.data.test_collection[usr] if record[2] == 1])
             self.test_list[usr] = buy
+
     """
     初始化对象时常做的动作，主要是生成数据内存表、生成偏好索引字典
     """
     def _test(self):
         self.data._test()
         self.make_prefs()
+
+
