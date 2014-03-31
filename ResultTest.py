@@ -16,7 +16,6 @@ class ResultTest:
         self.f1 = 0
         self._read_file(result_file, self.result)
         self._read_file(test_set_file, self.test_set)
-        self._calculate_f1_score()
 
     def _read_file(self, filename, target):
         content_filter = re.compile('\d+')
@@ -35,6 +34,8 @@ class ResultTest:
         pBrands = 0
         for i in range(len(self.test_set)):
             temp_test = self.test_set[self.test_set.keys()[i]]
+            if self.test_set.keys()[i] not in self.result:
+                continue
             temp_pred = self.result[self.test_set.keys()[i]]
             temp = [item for item in temp_test if item in temp_pred]
             hitBrands += len(temp)
@@ -46,17 +47,19 @@ class ResultTest:
         bBrands = 0
         for i in range(len(self.test_set)):
             temp_test = self.test_set[self.test_set.keys()[i]]
+            if self.test_set.keys()[i] not in self.result:
+                continue
             temp_pred = self.result[self.test_set.keys()[i]]
             temp = [item for item in temp_test if item in temp_pred]
             hitBrands += len(temp)
             bBrands += len(temp_test)
         self.recall = hitBrands/bBrands
 
-    def _calculate_f1_score(self):
+    def calculate_f1_score(self):
         self._calculate_precision()
         self._calculate_recall()
         if self.precision + self.recall:
-            self.f1 = (2 * pow(self.precision, 2))/(self.precision + self.recall)
+            self.f1 = (2 * self.precision * self.recall)/(self.precision + self.recall)
 
     def get_precision(self):
         return self.precision
