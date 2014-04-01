@@ -158,12 +158,21 @@ class Predictor:
             self.data = DatabaseOpt()
         else:
             self.data = DatabaseOpt(dataname=data)
+        
+    def make_prefs_item(self):
+        self.prefs = {}
+        self.prefs_test = {}
+        for usr in self.data.sample_collection:
+            for entry in self.data.sample_collection[usr]:
+                if entry[1] in self.prefs:
+                    self.prefs[entry[1]].update({entry[0]:(self.get_score(entry[2])+self.prefs[entry[1]][entry[0]])})
+                else:
+                    self.prefs[entry[1]] = {entry[0]:self.get_score(entry[2])}
     """
     生成偏好索引字典
     偏好格式:
     {用户id:{商品1id:评价得分,商品2id:评价得分,...},...}
     """            
-
     def make_prefs(self):
         self.prefs = dict()
         self.prefs_test = {}
@@ -172,8 +181,8 @@ class Predictor:
             #遍历该用户的每一条商品记录，依次是用户id，日期，行动，品牌id
             self.prefs[usr] = {}
             for entry in self.data.sample_collection[usr]:
-                if entry[3] in self.prefs[entry[0]]:
-                    self.prefs[entry[0]].update({entry[1]:self.get_score(entry[2])+self.prefs[entry[0]][entry[3]]})
+                if entry[1] in self.prefs[entry[0]]:
+                    self.prefs[entry[0]].update({entry[1]:(self.get_score(entry[2])+self.prefs[entry[0]][entry[1]])})
                 else:
                     self.prefs[entry[0]].update({entry[1]:self.get_score(entry[2])})
         """            
@@ -289,7 +298,17 @@ class Predictor:
         rankings.sort()
         rankings.reverse()
         return rankings[0:n]
-
+    
+    def get_recommendataions_list_item(self,n = 8,similarity = None):
+        self.recommend_list_item = {i:self.get_recommendations(i,n,similarity) for i in self.data.brandid}
+        self.recommend_list = {}
+        
+        for usr in self.data.sample_collection:
+            scores = {}
+            total = {}
+            for entry in self.data.sample_collection[usr]:
+                pass
+    
     """
     返回对所有人的推荐字典.格式如下:
     {用户id:[(相似度得分,商品id),(相似度得分,商品id),...],...}
