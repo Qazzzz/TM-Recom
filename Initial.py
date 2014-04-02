@@ -164,10 +164,11 @@ class Predictor:
         self.prefs_test = {}
         for usr in self.data.sample_collection:
             for entry in self.data.sample_collection[usr]:
-                if entry[1] in self.prefs:
+                self.prefs.setdefault(entry[1],{})
+                if entry[0] in self.prefs[entry[1]]:
                     self.prefs[entry[1]].update({entry[0]:(self.get_score(entry[2])+self.prefs[entry[1]][entry[0]])})
                 else:
-                    self.prefs[entry[1]] = {entry[0]:self.get_score(entry[2])}
+                    self.prefs[entry[1]].update({entry[0]:self.get_score(entry[2])})
     """
     生成偏好索引字典
     偏好格式:
@@ -298,16 +299,29 @@ class Predictor:
         rankings.sort()
         rankings.reverse()
         return rankings[0:n]
-    
-    def get_recommendataions_list_item(self,n = 8,similarity = None):
-        self.recommend_list_item = {i:self.get_recommendations(i,n,similarity) for i in self.data.brandid}
-        self.recommend_list = {}
         
-        for usr in self.data.sample_collection:
-            scores = {}
-            total = {}
-            for entry in self.data.sample_collection[usr]:
-                pass
+    def get_recommendations_item(self,person,n = 8, similarity = None):
+        if similarity == None:
+            similarity = self.sim_distance
+        scores = {}
+        totals = {}
+        for entry in self.data.sample_collection[person]:
+            for sim_item in self.top_matches(entry[1],n):
+                if sim_item[0] < 0.01:continue
+                scores.setdefault(sim_item[1],0)
+                scores[sim_item[1]] += sim_item[0] * self.get_score(entry[2])
+                totals.setdefault(sim_item[1],0)
+                totals[sim_item[1]] += sim_item[0]
+                print sim_item[0],sim_item[1]
+        rankings = [(score/totals[item], item) for item,score in scores.items()]
+        rankings.sort()
+        rankings.reverse()
+        return rankings[0:n]
+    
+    def get_recommendations_list_item(self,n = 8,similarity = None):
+        self.recommend_list = {i:self.get_recommendations_item(i,n,similarity) for i in self.data.userid}
+            
+                
     
     """
     返回对所有人的推荐字典.格式如下:
