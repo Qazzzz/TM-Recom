@@ -14,7 +14,7 @@ month_to_day = {1: 0, 2: 31, 3: 59, 4: 90, 5: 120, 6: 151, 7: 181, 8: 212, 9: 24
 
 
 class DatabaseOpt:
-    def __init__(self, dbname="tianmao", use_memory_table=1, rate=0.8):
+    def __init__(self, dbname="tianmao", use_memory_table=1, rate=0.8, item_base=0):
         self.con = sqlite.connect(dbname, timeout=20)
         self.userinfo = []
         self.userid = []
@@ -28,7 +28,10 @@ class DatabaseOpt:
             print("Database %s exist" % dbname)
         if use_memory_table:
             self.memory_tables_init()
-            self.create_sample_test_collection(rate)
+            if item_base:
+                self.create_sample_test_collection_item(rate)
+            else:
+                self.create_sample_test_collection(rate)
             print("Memory tables and sample/test set initialed")
 
     def __del__(self):
@@ -107,7 +110,7 @@ class DatabaseOpt:
             self.brandid = [i for (i,) in self.con.execute("SELECT * FROM brandid").fetchall()]
         return self.brandid
 
-    # rate = number of sample / total number
+    # rate = number of sample / total amount
     # for self.sample_collection & self.test_collection:
     #     key = user_id,  value = [(XXX, XXX, XXX, XXX), (XXX, XXX, XXX, XXX), .......]
     def create_sample_test_collection(self, rate=0.8):
@@ -122,13 +125,42 @@ class DatabaseOpt:
             self.test_collection[userid] = [item for item in userinfo_one[int(len(userinfo_one)*rate):] if item[2] == 1]
         self._output_test_set_file()
 
+    # for self.sample_collection & self.test_collection:
+    #     key = brand_id,  value = [(XXX, XXX, XXX, XXX), (XXX, XXX, XXX, XXX), .......]
+    def create_sample_test_collection_item(self, rate=0.8):
+        item_num = self.brand_num()
+        for i in range(item_num):
+            print("round %d" % i)
+            #item_id = self.con.execute("SELECT * FROM brandid").fetchall()[i][0]
+            item_id = self.get_brandid_table()[i]
+            self.sample_collection.setdefault(item_id, [])
+            self.test_collection.setdefault(item_id, [])
+            iteminfo_one = self.con.execute("SELECT * FROM userinfo WHERE brand_id=%d" % item_id).fetchall()
+            iteminfo_one.sort(key=lambda l: (l[3]))
+            self.sample_collection[item_id] = iteminfo_one[0:int(len(iteminfo_one)*rate)]
+            self.test_collection[item_id] = iteminfo_one[int(len(iteminfo_one)*rate):]
+        self._output_test_set_file_item()
+
     def _output_test_set_file(self):
         f = open(r"test_set.txt", 'w')
-        for user_id in self.test_collection:
-            if len(self.test_collection[user_id]):
-                s = str(user_id) + "\t"
-                for item in self.test_collection[user_id]:
+        for entry in self.test_collection.keys():
+            if len(self.test_collection[entry]):
+                s = str(entry) + "\t"
+                for item in self.test_collection[entry]:
                     s += str(item[1])
+                    s += ","
+                s = s[0:-1] + "\n"
+                f.write(s)
+        f.flush()
+        f.close()
+
+    def _output_test_set_file_item(self):
+        f = open(r"test_set.txt", 'w')
+        for entry in self.test_collection.keys():
+            if len(self.test_collection[entry]):
+                s = str(entry) + "\t"
+                for item in self.test_collection[entry]:
+                    s += str(item[0])
                     s += ","
                 s = s[0:-1] + "\n"
                 f.write(s)
